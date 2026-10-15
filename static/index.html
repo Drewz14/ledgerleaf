@@ -1,0 +1,65 @@
+<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Ledgerleaf — Stock Briefs</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+body{margin:0;background:#f6f1e7;color:#2b2a26;font:16px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
+h1,h2,h3{font-family:Georgia,'Times New Roman',serif;font-weight:600}
+.wrap{max-width:640px;margin:auto;padding:18px}
+header h1{margin:6px 0 2px;font-size:30px;color:#1f3d2b}header p{margin:0;color:#7a7364}
+form{display:flex;gap:8px;margin:16px 0}input{flex:1;padding:12px;border:1px solid #d9cfbc;border-radius:12px;font-size:17px;text-transform:uppercase;background:#fffdf8}
+button{padding:12px 18px;border:0;border-radius:12px;background:#1f3d2b;color:#fff;font-size:16px}
+.card{background:#fffdf8;border:1px solid #e6dcc8;border-radius:16px;padding:16px 18px;margin:14px 0;box-shadow:0 1px 2px #0000000a}
+.num{display:inline-block;width:30px;height:30px;border-radius:50%;background:#1f3d2b;color:#fff;text-align:center;line-height:30px;font-family:Georgia;margin-right:8px}
+.card h2{margin:0 0 6px;font-size:22px;display:flex;align-items:center}.card h3{margin:14px 0 2px;font-size:17px;color:#1f3d2b}.card p{margin:0}
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}.stats div{background:#f6f1e7;border-radius:10px;padding:8px 10px}.stats b{display:block;font-size:12px;color:#7a7364;font-weight:500}
+.sc{border-radius:12px;padding:10px 12px;margin:8px 0}.bull{background:#e3efe2}.base{background:#f1ead9}.bear{background:#f5e1dc}
+.pill{display:inline-block;padding:2px 10px;border-radius:20px;background:#f6f1e7;margin:2px 4px 2px 0;font-size:14px}.warn{background:#fbf3df;border-left:4px solid #c9a227;padding:8px 10px;border-radius:8px;font-size:14px;margin:8px 0}
+.muted{color:#7a7364;font-size:13px}footer{text-align:center;color:#7a7364;font-size:13px;padding:20px}
+</style></head><body><div class="wrap">
+<header><h1>Ledgerleaf</h1><p>Plain-language stock briefs from real market data</p></header>
+<form onsubmit="go(event)"><input id="t" placeholder="Ticker, e.g. AAPL" autocomplete="off"><button>Analyze</button></form>
+<div id="out"><div class="card"><p>Enter a stock ticker to get a full brief: company deep dive, competition, market environment, investment thesis and scenarios.</p></div></div>
+<footer>For education only. Not financial advice.<br>Data: Yahoo Finance (via yfinance). May be delayed.</footer></div>
+<script>
+let ch,ch2,ch3;const pc=v=>v==null?'n/a':(v>0?'+':'')+v.toFixed(1)+'%';const e=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const $=n=>n==null?'n/a':'$'+n.toFixed(2);
+async function go(ev){ev&&ev.preventDefault();const s=document.getElementById('t').value.trim();if(!s)return;
+ const o=document.getElementById('out');o.innerHTML='<div class="card"><p>Loading '+e(s.toUpperCase())+'…</p></div>';
+ const r=await fetch('/api/report/'+encodeURIComponent(s));const d=await r.json();
+ if(d.error){o.innerHTML='<div class="card"><p>'+e(d.error)+'</p></div>';return}
+ let h=`<div class="card"><h2>${e(d.name)} <span class="muted">&nbsp;${e(d.symbol)}</span></h2><p class="muted">${e(d.sector)} · ${e(d.industry)} · as of ${e(d.asof)}</p><br><div class="stats">${d.stats.map(([k,v])=>`<div><b>${e(k)}</b>${e(v)}</div>`).join('')}</div></div>
+ <div class="card"><h3 style="margin-top:0">1-year price</h3><canvas id="c" height="200"></canvas></div>`;
+ d.sections.forEach(([t,sec],i)=>{h+=`<div class="card"><h2><span class="num">${i+1}</span>${e(t)}</h2>`+Object.entries(sec).map(([k,v])=>`<h3>${e(k)}</h3><p>${e(v)}</p>`).join('')+'</div>'});
+ const sc=d.scenarios;h+=`<div class="card"><h2><span class="num">5</span>Scenario Analysis</h2><p class="muted">Illustrative 12-month estimates, not predictions.</p>`;
+ if(sc){[['bull','Bull case'],['base','Base case'],['bear','Bear case']].forEach(([k,l])=>h+=`<div class="sc ${k}"><b>${l}:</b> ${$(sc[k][0])} – ${$(sc[k][1])}</div>`);
+  const a=sc.analyst;h+=`<h3>Wall Street targets</h3><p>${a.mean?`Low ${$(a.low)} · Mean ${$(a.mean)} · High ${$(a.high)} (${a.n||'n/a'} analysts)`:'n/a'}</p><h3>How we got these numbers</h3><p class="muted">${e(sc.method)}</p>`}else h+='<p>n/a (not enough price history)</p>';
+ h+='</div>'+fc(d.forecast);o.innerHTML=h;drawFc(d.forecast);
+ if(ch)ch.destroy();ch=new Chart(document.getElementById('c'),{type:'line',data:{labels:d.chart.d,datasets:[{data:d.chart.c,borderColor:'#1f3d2b',backgroundColor:'#1f3d2b14',fill:true,pointRadius:0,borderWidth:2}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:5}}},animation:false}});
+ history.replaceState(null,'','?t='+d.symbol)}
+const q=new URLSearchParams(location.search).get('t');if(q){document.getElementById('t').value=q;go()}
+
+function fc(f){let h=`<div class="card"><h2><span class="num">6</span>Forecast Lab</h2><div class="warn">Everything here is <b>historical statistics</b>: what this stock did in the past under similar dates or patterns. It is not a prediction, and the past often does not repeat.</div>`;
+ if(!f||f.error)return h+'<p>n/a</p></div>';const S=f.seasonality,P=f.pattern;
+ h+=`<p class="muted">Price history used: ${e(f.history)}</p><h3>Seasonality by month</h3>`;
+ if(S.n_years<10)h+=`<div class="warn">Only ${S.n_years} years of history — seasonal averages are thin.</div>`;
+ h+=`<canvas id="c2" height="190"></canvas><p class="muted">Bar = average monthly return over ${e(S.years)}. Tap a bar for the win rate (share of years that month closed up).</p>`;
+ if(S.best)h+=`<p><b>Strongest month:</b> ${S.best.m} (avg ${pc(S.best.avg)}, up ${S.best.win}% of ${S.best.n} years) · <b>Weakest:</b> ${S.worst.m} (avg ${pc(S.worst.avg)}, up ${S.worst.win}% of years)</p>`;
+ const N=S.next3m;h+=`<h3>The next 3 months, in past years</h3><p>${N?`Starting from ${N.from} and holding ~63 trading days, this stock rose in <b>${N.win}%</b> of ${N.n} past years. Average ${pc(N.avg)}, median ${pc(N.median)}.`:'n/a'}</p>`;
+ h+='<h3>Pattern echoes</h3>';
+ if(!P||!P.matches)return h+'<p>Not enough history or no close matches (n/a).</p></div>';
+ h+=`<p class="muted">We took the last ${P.L} trading days of price shape, searched earlier history (excluding the latest year) for the closest-matching shapes (correlation ≥ 0.80, non-overlapping), and checked what happened in the ${P.H} trading days after each.</p>
+ <div><span class="pill">Matches: <b>${P.matches}</b></span><span class="pill">Avg. similarity: <b>${P.avg_corr}</b></span><span class="pill">Robustness: <b>${'●'.repeat(P.score)}${'○'.repeat(5-P.score)}</b> ${P.score}/5</span></div>
+ <div class="sc bull"><b>Went higher afterward:</b> ${P.bull}% of matches</div><div class="sc bear"><b>Went lower afterward:</b> ${P.bear}% of matches</div>
+ <p>Median move after ${P.H} days: <b>${pc(P.median)}</b> · typical range (10th–90th pct) ${pc(P.p10)} to ${pc(P.p90)} · extremes ${pc(P.min)} / ${pc(P.max)}</p>
+ <canvas id="c3" height="210"></canvas><p class="muted">Dark line: actual recent price. Dashed: median path of the historical matches scaled to today's price; shaded band: middle 50% of matches.</p>
+ <h3>How the robustness score works</h3><p class="muted">Start at 1 point. +1 if there are at least 8 matches, +1 if at least 15, +1 if average similarity is 0.85 or higher, +1 if one direction won in at least 65% of matches. Few matches or a near 50/50 split means a weak signal.</p></div>`;return h}
+function drawFc(f){if(!f||f.error)return;[ch2,ch3].forEach(c=>c&&c.destroy());const M=f.seasonality.months;
+ ch2=new Chart(document.getElementById('c2'),{type:'bar',data:{labels:M.map(x=>x.m),datasets:[{data:M.map(x=>x.avg),backgroundColor:M.map(x=>x.avg>=0?'#5b8c5a':'#c0614f')}]},options:{animation:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`avg ${pc(M[c.dataIndex].avg)} · up ${M[c.dataIndex].win}% of ${M[c.dataIndex].n} yrs`}}},scales:{y:{ticks:{callback:v=>v+'%'}}}}});
+ const P=f.pattern;if(!P||!P.matches)return;const C=P.chart,k=C.recent.length,pad=Array(k-1).fill(null),last=C.recent[k-1];
+ ch3=new Chart(document.getElementById('c3'),{type:'line',data:{labels:C.d,datasets:[
+  {data:C.recent,borderColor:'#1f3d2b',pointRadius:0,borderWidth:2},
+  {data:[...pad,last,...C.hi],borderColor:'transparent',backgroundColor:'#c9a22733',pointRadius:0,fill:'+1'},
+  {data:[...pad,last,...C.lo],borderColor:'transparent',pointRadius:0},
+  {data:[...pad,last,...C.med],borderColor:'#9a7b14',borderDash:[5,4],pointRadius:0,borderWidth:2}]},
+  options:{animation:false,plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:4}}}}})}
+</script></body></html>
