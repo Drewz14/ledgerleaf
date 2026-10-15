@@ -1,4 +1,5 @@
-import math, time, yfinance as yf
+import math, os, time, yfinance as yf
+import sec
 from forecast import build_forecast
 from flask import Flask, jsonify, send_from_directory
 app = Flask(__name__, static_folder='static')
@@ -22,8 +23,26 @@ def safe_fc(t):
     except Exception as e: return {'error': str(e)}
 
 def build(sym):
-    t = yf.Ticker(sym); i = t.info or {}
+    t = yf.Ticker(sym); i, src = {}, []
+    if not os.environ.get('LL_NO_INFO'):
+        try: i = dict(t.info or {})
+        except Exception: i = {}
+    if g(i,'marketCap') and g(i,'totalRevenue'): src.append('Yahoo Finance profile')
     h = t.history(period='1y')
+    try:
+        if os.environ.get('LL_NO_INFO'): raise Exception('sim')
+        fi = t.fast_info
+        for k, fk in (('marketCap','market_cap'),('_shares','shares')):
+            if not g(i,k):
+                v = fi.get(fk)
+                if v: i[k] = float(v)
+    except Exception: pass
+    if not (g(i,'totalRevenue') and g(i,'sector') and g(i,'grossMargins') is not None):
+        try:
+            for k, v in sec.fundamentals(sym).items():
+                if g(i,k) is None: i[k] = v
+            src.append('SEC EDGAR filings')
+        except Exception: pass
     if h.empty and not g(i,'currentPrice'): return None
     closes = [round(float(c),2) for c in h['Close']]
     dates = [d.strftime('%Y-%m-%d') for d in h.index]
@@ -34,9 +53,12 @@ def build(sym):
     rev, rg, gm, om, pm = g(i,'totalRevenue'), g(i,'revenueGrowth'), g(i,'grossMargins'), g(i,'operatingMargins'), g(i,'profitMargins')
     cash, debt, fcf, de, cr = g(i,'totalCash'), g(i,'totalDebt'), g(i,'freeCashflow'), g(i,'debtToEquity'), g(i,'currentRatio')
     beta, emp, roe = g(i,'beta'), g(i,'fullTimeEmployees'), g(i,'returnOnEquity')
-    lo, hi = g(i,'fiftyTwoWeekLow'), g(i,'fiftyTwoWeekHigh')
+    lo = g(i,'fiftyTwoWeekLow') or (min(closes) if closes else None)
+    hi = g(i,'fiftyTwoWeekHigh') or (max(closes) if closes else None)
+    if not mcap and price and g(i,'_shares'): mcap = price * i['_shares']
+    if not pe and price and g(i,'_eps') and i['_eps'] > 0: pe = price / i['_eps']
     country = g(i,'country') or 'n/a'
-    summary = g(i,'longBusinessSummary') or 'No company description available from the data source.'
+    summary = g(i,'longBusinessSummary') or (f"{name} is a U.S.-listed company classified by the SEC under \"{sector}\"" + (f", with its business address in {i['_city']}" if g(i,'_city') else '') + ". A detailed business description was not available from the data source; see the company's latest 10-K on SEC EDGAR.")
     # volatility
     vol = None
     if len(closes) > 30:
@@ -49,7 +71,7 @@ def build(sym):
     def fmt(x,f="{:.1f}"): return "n/a" if x is None else f.format(x)
 
     deep = {
-      'Executive Summary': para(f"{name} ({sym}) is a {sz} company in {industry} ({sector}), with a market value of {money(mcap)}.",
+      'Executive Summary': para(f"{name} ({sym}) is {'an' if sz[0] in 'aeiou' else 'a'} {sz} company in {industry}{"" if industry == sector else f" ({sector})"}, with a market value of {money(mcap)}.",
           f"Over the past year the stock moved {pct(ret1y)}." if ret1y is not None else None,
           f"Trailing revenue is {money(rev)} with a net margin of {na(pct(pm))}." ),
       'Company Background': '. '.join(sents[:3]) + ('.' if sents else ''),
@@ -91,7 +113,7 @@ def build(sym):
              ('Revenue', money(rev)), ('Gross margin', na(pct(gm))), ('Op. margin', na(pct(om))), ('Net margin', na(pct(pm)))]
     return dict(symbol=sym, name=name, sector=sector, industry=industry, stats=stats, chart={'d':dates,'c':closes},
       sections=[['The Deep Dive',deep],['Competitive Environment',comp],['Overall Market Environment',mkt],['Investment Thesis',thesis]],
-      scenarios=scen, forecast=safe_fc(t), asof=time.strftime('%Y-%m-%d %H:%M ET'))
+      sources=src+['Yahoo Finance price history'], scenarios=scen, forecast=safe_fc(t), asof=time.strftime('%Y-%m-%d %H:%M ET'))
 
 @app.route('/api/report/<sym>')
 def report(sym):

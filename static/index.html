@@ -35,7 +35,7 @@ async function go(ev){ev&&ev.preventDefault();const s=document.getElementById('t
   const a=sc.analyst;h+=`<h3>Wall Street targets</h3><p>${a.mean?`Low ${$(a.low)} · Mean ${$(a.mean)} · High ${$(a.high)} (${a.n||'n/a'} analysts)`:'n/a'}</p><h3>How we got these numbers</h3><p class="muted">${e(sc.method)}</p>`}else h+='<p>n/a (not enough price history)</p>';
  h+='</div>'+fc(d.forecast);o.innerHTML=h;drawFc(d.forecast);
  if(ch)ch.destroy();ch=new Chart(document.getElementById('c'),{type:'line',data:{labels:d.chart.d,datasets:[{data:d.chart.c,borderColor:'#1f3d2b',backgroundColor:'#1f3d2b14',fill:true,pointRadius:0,borderWidth:2}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{maxTicksLimit:5}}},animation:false}});
- history.replaceState(null,'','?t='+d.symbol)}
+ document.querySelector("footer").innerHTML="For education only. Not financial advice.<br>Data: "+e((d.sources||[]).join(", "))+". May be delayed.";history.replaceState(null,'','?t='+d.symbol)}
 const q=new URLSearchParams(location.search).get('t');if(q){document.getElementById('t').value=q;go()}
 
 function fc(f){let h=`<div class="card"><h2><span class="num">6</span>Forecast Lab</h2><div class="warn">Everything here is <b>historical statistics</b>: what this stock did in the past under similar dates or patterns. It is not a prediction, and the past often does not repeat.</div>`;
