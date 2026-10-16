@@ -1,5 +1,6 @@
 <!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Ledgerleaf — Stock Briefs</title>
+<title>Ledgerleaf — Stock Briefs & Forecasts</title><meta name="description" content="Plain-language stock briefs, scenarios and history-based forecasts.">
+<meta name="theme-color" content="#1f3d2b"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png"><link rel="apple-touch-icon" href="/static/icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-title" content="Ledgerleaf">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
 body{margin:0;background:#f6f1e7;color:#2b2a26;font:16px/1.55 -apple-system,Segoe UI,Roboto,sans-serif}
@@ -15,19 +16,47 @@ button{padding:12px 18px;border:0;border-radius:12px;background:#1f3d2b;color:#f
 .sc{border-radius:12px;padding:10px 12px;margin:8px 0}.bull{background:#e3efe2}.base{background:#f1ead9}.bear{background:#f5e1dc}
 .pill{display:inline-block;padding:2px 10px;border-radius:20px;background:#f6f1e7;margin:2px 4px 2px 0;font-size:14px}.warn{background:#fbf3df;border-left:4px solid #c9a227;padding:8px 10px;border-radius:8px;font-size:14px;margin:8px 0}
 .muted{color:#7a7364;font-size:13px}footer{text-align:center;color:#7a7364;font-size:13px;padding:20px}
+*{box-sizing:border-box}input{min-width:0}html,body{overflow-x:hidden}canvas{max-width:100%}button:disabled{opacity:.6}
+.wl{display:flex;flex-direction:column;gap:6px}.wi{display:flex;align-items:center;gap:8px;padding:10px 12px;background:#f6f1e7;border-radius:12px;cursor:pointer;min-height:48px}
+.wi .s{font-weight:700;min-width:64px}.wi .p{flex:1;text-align:right}.up{color:#2f6b3a}.dn{color:#a2412f}.x{background:none;color:#7a7364;padding:6px 10px;font-size:20px;line-height:1}
+.star{background:#f6f1e7;color:#1f3d2b;border:1px solid #d9cfbc;padding:8px 12px;font-size:15px;margin-top:8px}
+.spin{display:inline-block;width:18px;height:18px;border:3px solid #d9cfbc;border-top-color:#1f3d2b;border-radius:50%;animation:sp 1s linear infinite;vertical-align:middle;margin-right:8px}@keyframes sp{to{transform:rotate(360deg)}}
+.err{border-left:4px solid #a2412f}.disc{font-size:13px;color:#5f594c;background:#fbf3df;border-radius:12px;padding:10px 12px;margin:14px 0}
+@media(max-width:420px){.wrap{padding:12px}header h1{font-size:26px}.card{padding:14px}.stats{gap:8px}button{padding:12px 14px}}
 </style></head><body><div class="wrap">
 <header><h1>Ledgerleaf</h1><p>Plain-language stock briefs from real market data</p></header>
-<form onsubmit="go(event)"><input id="t" placeholder="Ticker, e.g. AAPL" autocomplete="off"><button>Analyze</button></form>
+<form onsubmit="go(event)"><input id="t" inputmode="text" autocapitalize="characters" spellcheck="false" maxlength="10" placeholder="Ticker, e.g. AAPL" autocomplete="off"><button id="go">Analyze</button></form>
+<div class="card" id="wlc"><h3 style="margin-top:0">★ My watchlist <button class="x" style="float:right;font-size:14px" onclick="loadWL()" title="Refresh">↻</button></h3><div class="wl" id="wl"></div></div>
 <div id="out"><div class="card"><p>Enter a stock ticker to get a full brief: company deep dive, competition, market environment, investment thesis and scenarios.</p></div></div>
+<div class="disc"><b>Not financial advice.</b> Ledgerleaf is for education only. Scenarios and the Forecast Lab are based on historical price patterns: they show past odds, not predictions. Data may be delayed or incomplete. Do your own research before investing.</div>
 <footer>For education only. Not financial advice.<br>Data: Yahoo Finance (via yfinance). May be delayed.</footer></div>
 <script>
 let ch,ch2,ch3;const pc=v=>v==null?'n/a':(v>0?'+':'')+v.toFixed(1)+'%';const e=s=>String(s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const $=n=>n==null?'n/a':'$'+n.toFixed(2);
-async function go(ev){ev&&ev.preventDefault();const s=document.getElementById('t').value.trim();if(!s)return;
- const o=document.getElementById('out');o.innerHTML='<div class="card"><p>Loading '+e(s.toUpperCase())+'…</p></div>';
- const r=await fetch('/api/report/'+encodeURIComponent(s));const d=await r.json();
- if(d.error){o.innerHTML='<div class="card"><p>'+e(d.error)+'</p></div>';return}
- let h=`<div class="card"><h2>${e(d.name)} <span class="muted">&nbsp;${e(d.symbol)}</span></h2><p class="muted">${e(d.sector)} · ${e(d.industry)} · as of ${e(d.asof)}</p><br><div class="stats">${d.stats.map(([k,v])=>`<div><b>${e(k)}</b>${e(v)}</div>`).join('')}</div></div>
+const WK='ll_watchlist';const getWL=()=>{try{return JSON.parse(localStorage.getItem(WK))||[]}catch(_){return[]}};const setWL=a=>localStorage.setItem(WK,JSON.stringify(a));
+function toggleWL(s){let a=getWL();a=a.includes(s)?a.filter(x=>x!==s):[...a,s];setWL(a);loadWL();const b=document.getElementById('star');if(b)b.textContent=a.includes(s)?'★ On watchlist (tap to remove)':'☆ Add to watchlist'}
+function openT(s){document.getElementById('t').value=s;go();window.scrollTo({top:0,behavior:'smooth'})}
+async function loadWL(){const a=getWL(),w=document.getElementById('wl');
+ if(!a.length){w.innerHTML='<p class="muted">No stocks saved yet. Analyze a ticker and tap “☆ Add to watchlist”.</p>';return}
+ w.innerHTML=a.map(s=>`<div class="wi" onclick="openT('${s}')"><span class="s">${e(s)}</span><span class="p muted" id="q_${s.replace(/[^A-Z0-9]/g,'_')}"><span class="spin"></span></span><button class="x" title="Remove" onclick="event.stopPropagation();toggleWL('${s}')">×</button></div>`).join('');
+ try{const r=await fetch('/api/quotes?s='+encodeURIComponent(a.join(',')));const d=await r.json();
+  d.quotes.forEach(q=>{const el=document.getElementById('q_'+q.symbol.replace(/[^A-Z0-9]/g,'_'));if(!el)return;
+   if(q.price==null){el.textContent='n/a';return}const c=q.change>=0?'up':'dn';el.className='p';
+   el.innerHTML=`<b>$${q.price.toFixed(2)}</b> <span class="${c}">${q.change==null?'':(q.change>=0?'+':'')+q.change.toFixed(2)+' ('+(q.pct>=0?'+':'')+q.pct.toFixed(2)+'%)'}</span>`})}
+ catch(_){a.forEach(s=>{const el=document.getElementById('q_'+s.replace(/[^A-Z0-9]/g,'_'));if(el)el.textContent='offline'})}}
+loadWL();
+async function go(ev){ev&&ev.preventDefault();const s=document.getElementById('t').value.trim().toUpperCase();if(!s)return;
+ const o=document.getElementById('out'),btn=document.getElementById('go');btn.disabled=true;
+ o.innerHTML='<div class="card"><p><span class="spin"></span>Analyzing '+e(s)+'… <span class="muted" id="slow"></span></p></div>';
+ const t1=setTimeout(()=>{const x=document.getElementById('slow');if(x)x.textContent='Pulling price history and filings, usually 5–15 seconds.'},4000);
+ const t2=setTimeout(()=>{const x=document.getElementById('slow');if(x)x.textContent='The server was asleep and is waking up (free hosting). The first load can take up to a minute. Hang tight.'},12000);
+ let d;try{const ctl=new AbortController();const tm=setTimeout(()=>ctl.abort(),90000);const r=await fetch('/api/report/'+encodeURIComponent(s),{signal:ctl.signal});clearTimeout(tm);
+  try{d=await r.json()}catch(_){d={error:'The server is busy or restarting. Please try again in a few seconds.'}}}
+ catch(x){d={error:x.name==='AbortError'?'This took too long. The server may still be waking up. Please try again.':'Can’t reach Ledgerleaf. Check your connection and try again.'}}
+ finally{clearTimeout(t1);clearTimeout(t2);btn.disabled=false}
+ if(d.error){o.innerHTML='<div class="card err"><p><b>Hmm.</b> '+e(d.error)+'</p></div>';return}
+ const on=getWL().includes(d.symbol);
+ let h=`<div class="card"><h2>${e(d.name)} <span class="muted">&nbsp;${e(d.symbol)}</span></h2><p class="muted">${e(d.sector)} · ${e(d.industry)} · as of ${e(d.asof)}</p><button class="star" id="star" onclick="toggleWL('${d.symbol}')">${on?'★ On watchlist (tap to remove)':'☆ Add to watchlist'}</button><br><br><div class="stats">${d.stats.map(([k,v])=>`<div><b>${e(k)}</b>${e(v)}</div>`).join('')}</div></div>
  <div class="card"><h3 style="margin-top:0">1-year price</h3><canvas id="c" height="200"></canvas></div>`;
  d.sections.forEach(([t,sec],i)=>{h+=`<div class="card"><h2><span class="num">${i+1}</span>${e(t)}</h2>`+Object.entries(sec).map(([k,v])=>`<h3>${e(k)}</h3><p>${e(v)}</p>`).join('')+'</div>'});
  const sc=d.scenarios;h+=`<div class="card"><h2><span class="num">5</span>Scenario Analysis</h2><p class="muted">Illustrative 12-month estimates, not predictions.</p>`;

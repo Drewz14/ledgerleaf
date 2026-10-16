@@ -1,7 +1,10 @@
 import math, os, time, yfinance as yf
 import sec
 from forecast import build_forecast
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
+import re
+VALID=re.compile(r'^[A-Z0-9.\-^=]{1,10}$')
+QCACHE = {}
 app = Flask(__name__, static_folder='static')
 CACHE = {}
 app.json.sort_keys = False
@@ -117,13 +120,44 @@ def build(sym):
 
 @app.route('/api/report/<sym>')
 def report(sym):
-    sym = sym.upper().strip()[:10]
+    sym = sym.upper().strip()
+    if not VALID.match(sym): return jsonify(error=f"'{sym[:12]}' doesn't look like a ticker. Try something like AAPL or MSFT."), 400
     c = CACHE.get(sym)
-    if c and time.time()-c[0] < 900: return jsonify(c[1])
+    if c and time.time()-c[0] < (900 if c[2]==200 else 120): return jsonify(c[1]), c[2]
     try: d = build(sym)
-    except Exception as e: return jsonify(error=f"Could not load data: {e}"), 502
-    if not d: return jsonify(error=f"No data found for '{sym}'."), 404
-    CACHE[sym] = (time.time(), d); return jsonify(d)
+    except Exception as e: return jsonify(error=f"Couldn't reach market data for {sym} right now. Please try again in a minute."), 502
+    if not d:
+        body={'error': f"No stock found for '{sym}'. Check the ticker symbol and try again."}
+        CACHE[sym]=(time.time(), body, 404); return jsonify(body), 404
+    CACHE[sym] = (time.time(), d, 200); return jsonify(d)
+
+def quote(sym):
+    c = QCACHE.get(sym)
+    if c and time.time()-c[0] < 120: return c[1]
+    q = {'symbol': sym, 'price': None, 'change': None, 'pct': None}
+    try:
+        h = yf.Ticker(sym).history(period='5d', auto_adjust=False)['Close'].dropna()
+        if len(h):
+            p = float(h.iloc[-1]); q['price'] = round(p, 2)
+            if len(h) > 1:
+                pv = float(h.iloc[-2]); q['change'] = round(p-pv, 2); q['pct'] = round((p/pv-1)*100, 2)
+        else: q['error'] = 'not found'
+    except Exception: q['error'] = 'unavailable'
+    QCACHE[sym] = (time.time(), q); return q
+
+@app.route('/api/quotes')
+def quotes():
+    syms = [x.strip().upper() for x in request.args.get('s','').split(',') if x.strip()][:25]
+    syms = [x for x in dict.fromkeys(syms) if VALID.match(x)]
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(8) as ex: out = list(ex.map(quote, syms))
+    return jsonify(quotes=out)
+
+@app.route('/healthz')
+def healthz(): return 'ok'
+
+@app.route('/manifest.webmanifest')
+def manifest(): return send_from_directory('static','manifest.webmanifest', mimetype='application/manifest+json')
 
 @app.route('/')
 def index(): return send_from_directory('static','index.html')
